@@ -37,7 +37,7 @@ loop {                          									# Servers run forever
 
 		request_line = client.gets
 
-		STDERR.puts request_line
+		#STDERR.puts request_line
 
 		proxy_client_socket = TCPSocket.open(HTTP_SERVER_HOSTNAME, HTTP_SERVER_PORT)
 
@@ -51,6 +51,8 @@ loop {                          									# Servers run forever
 
 		proxy_client_socket.close               					# Close the socket when done
 
+		response = ''
+		
 		if http_server_response =~ /Monitoring/
 
 			# Make sure the file exists and is not a directory
@@ -59,12 +61,21 @@ loop {                          									# Servers run forever
 
 			if File.exist?(path) && !File.directory?(path)
 				File.open(path, "rb") do |file|
-				client.print 	"HTTP/1.1 200 OK\r\n" +
-								"Content-Type: #{content_type(file)}\r\n" +
-								"Content-Length: #{file.size}\r\n" +
-								"Connection: close\r\n"
 
-				client.print 	"\r\n"
+				response = 	"HTTP/1.1 200 OK\r\n" +
+							"Content-Type: #{content_type(file)}\r\n" +
+							"Content-Length: #{file.size}\r\n" +
+							"Connection: close\r\n" +
+							"\r\n"
+
+				client.puts response
+
+				#client.print 	"HTTP/1.1 200 OK\r\n" +
+				#				"Content-Type: #{content_type(file)}\r\n" +
+				#				"Content-Length: #{file.size}\r\n" +
+				#				"Connection: close\r\n"
+
+				#client.print 	"\r\n"
 
 				# write the contents of the file to the socket
 				IO.copy_stream(file, client)
@@ -73,20 +84,36 @@ loop {                          									# Servers run forever
 			else
 				message = "File not found\n"
 
+				response = 	"HTTP/1.1 404 Not Found\r\n" +
+							"Content-Type: text/plain\r\n" +
+							"Content-Length: #{message.size}\r\n" +
+							"Connection: close\r\n"
+
+				client.puts response
+
 				# respond with a 404 error code to indicate the file does not exist
-				client.print "HTTP/1.1 404 Not Found\r\n" +
-				"Content-Type: text/plain\r\n" +
-				"Content-Length: #{message.size}\r\n" +
-				"Connection: close\r\n"
+				#client.print "HTTP/1.1 404 Not Found\r\n" +
+				#{}"Content-Type: text/plain\r\n" +
+				#{}"Content-Length: #{message.size}\r\n" +
+				#{}"Connection: close\r\n"
 
-				client.print "\r\n"
+				#client.print "\r\n"
 
-				client.print message
+				#client.print message
 			end
 
 		else
 			client.puts http_server_response
+			response = http_server_response
 		end
+
+
+				puts "------RESPONSE------"
+				puts response.chomp
+				puts "----PEER ADDRESS----"
+				puts client.peeraddr
+				puts "\n"
+
 		client.close                								# Disconnect from the client
 	end
 }
