@@ -1,119 +1,59 @@
-require 'socket'                									# Get sockets from stdlib
+require 'socket'
 
-################## CONSTANTS ##################
-
-# Files will be served from this directory
-WEB_ROOT = './public'
-
-# Map extensions to their content type
-CONTENT_TYPE_MAPPING = {
-	'html' => 'text/html',
-	'txt' => 'text/plain',
-	'png' => 'image/png',
-	'jpg' => 'image/jpeg'
-}
-
-# Treat as binary data if content type cannot be found
-DEFAULT_CONTENT_TYPE = 'application/octet-stream'
-
+# Defines constants
 PROXY_SERVER_PORT = 3000
-HTTP_SERVER_HOSTNAME = 'localhost'
-HTTP_SERVER_PORT = 2345
+HTTP_SERVER_PORT = 80
 
-################## FUNCTIONS ##################
+# Opens TCP connection with proxy server
+proxy_server_socket = TCPServer.open(PROXY_SERVER_PORT)
 
-# Parses the extension of the requested file and then looks up its content type.
-def content_type(path)
-	ext = File.extname(path).split(".").last
-	CONTENT_TYPE_MAPPING.fetch(ext, DEFAULT_CONTENT_TYPE)
-end
+# Makes proxy server run forever
+loop do
 
-################## PROXY SERVER ##################
+	# Creates a new thread for each incoming request from clients
+	Thread.start(proxy_server_socket.accept) do |proxy_client_socket|
 
-proxy_server_socket = TCPServer.open(PROXY_SERVER_PORT)   			# Socket to listen on port 2000
+		# Retrieves client's HTTP request
+		client_request = proxy_client_socket.gets
 
-loop {                          									# Servers run forever
-	Thread.start(proxy_server_socket.accept) do |client|
+		# Uses regex to match URL
+		server_hostname = client_request.match(/([\da-z\.-]+)\.([a-z\.]{2,6})/).to_s
 
-		request_line = client.gets
+		# Opens TCP connection with HTTP server on the matched URL
+		http_client_socket = TCPSocket.open(server_hostname, HTTP_SERVER_PORT)
 
-		#STDERR.puts request_line
+		# Sends request to HTTP server
+		http_client_socket.puts "GET / HTTP/1.1"
+		http_client_socket.puts "Host: " + server_hostname
+		http_client_socket.puts "\r\n\r\n"
 
-		proxy_client_socket = TCPSocket.open(HTTP_SERVER_HOSTNAME, HTTP_SERVER_PORT)
+		# Prints HTTP response code and IP addresses
+		response_code = http_client_socket.gets
+		puts "------RESPONSE------"
+		puts response_code
+		puts "----PROXY SERVER ADDRESS----"
+		puts proxy_client_socket.peeraddr[3]
+		puts "----HTTP SERVER ADDRESS----"
+		puts http_client_socket.peeraddr[3]
+		puts "\n"
 
-		proxy_client_socket.puts request_line
-
+		# Gets HTTP server response
 		http_server_response = ''
-
-		while line = proxy_client_socket.gets   					# Read lines from the socket
-		  http_server_response += line      						# And print with platform line terminator
+		while line = http_client_socket.gets
+			http_server_response += line
 		end
 
-		proxy_client_socket.close               					# Close the socket when done
-
-		response = ''
-		
-		if http_server_response =~ /Monitoring/
-
-			# Make sure the file exists and is not a directory
-			# before attempting to open it.
-			path = './public/not_authorized.html'
-
-			if File.exist?(path) && !File.directory?(path)
-				File.open(path, "rb") do |file|
-
-				response = 	"HTTP/1.1 200 OK\r\n" +
-							"Content-Type: #{content_type(file)}\r\n" +
-							"Content-Length: #{file.size}\r\n" +
-							"Connection: close\r\n" +
-							"\r\n"
-
-				client.puts response
-
-				#client.print 	"HTTP/1.1 200 OK\r\n" +
-				#				"Content-Type: #{content_type(file)}\r\n" +
-				#				"Content-Length: #{file.size}\r\n" +
-				#				"Connection: close\r\n"
-
-				#client.print 	"\r\n"
-
-				# write the contents of the file to the socket
-				IO.copy_stream(file, client)
-				end
-
-			else
-				message = "File not found\n"
-
-				response = 	"HTTP/1.1 404 Not Found\r\n" +
-							"Content-Type: text/plain\r\n" +
-							"Content-Length: #{message.size}\r\n" +
-							"Connection: close\r\n"
-
-				client.puts response
-
-				# respond with a 404 error code to indicate the file does not exist
-				#client.print "HTTP/1.1 404 Not Found\r\n" +
-				#{}"Content-Type: text/plain\r\n" +
-				#{}"Content-Length: #{message.size}\r\n" +
-				#{}"Connection: close\r\n"
-
-				#client.print "\r\n"
-
-				#client.print message
-			end
-
+		# Checks if it contains the undesired word
+		if http_server_response =~ /[Mm]onitorando/
+			http_server_response = "<!DOCTYPE html><html><head><title>Warning!</title></head><body><p>Access not authorized!</p></body></html>"
 		else
-			client.puts http_server_response
-			response = http_server_response
+			http_server_response = response_code + http_server_response
 		end
 
+		proxy_client_socket.puts http_server_response
 
-				puts "------RESPONSE------"
-				puts response.chomp
-				puts "----PEER ADDRESS----"
-				puts client.peeraddr
-				puts "\n"
+		http_client_socket.close
+		proxy_client_socket.close
 
-		client.close                								# Disconnect from the client
 	end
-}
+end
